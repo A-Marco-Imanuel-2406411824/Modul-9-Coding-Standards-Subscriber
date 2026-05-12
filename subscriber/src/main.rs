@@ -79,7 +79,7 @@ async fn main() {
                         println!("In Marco's Computer [2406411824]. Message received: {:?}", message);
 
                         // Simulate slow subscriber
-                        //tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
                         delivery.ack(BasicAckOptions::default()).await.unwrap();
                     }
