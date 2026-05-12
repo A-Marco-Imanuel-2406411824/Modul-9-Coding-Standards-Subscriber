@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use crosstown_bus::{CrosstownBus, MessageHandler, HandleError};
-use std::{thread, time};
+use lapin::{Connection, ConnectionProperties, options::*, types::FieldTable, ExchangeKind};
+use futures::stream::StreamExt;
 
 #[derive(Debug, Clone, BorshDeserialize, BorshSerialize)]
 pub struct UserCreatedEventMessage {
@@ -8,34 +8,86 @@ pub struct UserCreatedEventMessage {
     pub user_name: String
 }
 
-pub struct UserCreatedHandler;
+#[tokio::main]
+async fn main() {
+    let uri = "amqp://guest:guest@localhost:5672";
+    let connection = Connection::connect(
+        uri,
+        ConnectionProperties::default(),
+    )
+    .await
+    .unwrap();
 
-impl MessageHandler<UserCreatedEventMessage> for UserCreatedHandler {
-    fn get_handler_action(&self) -> String {
-        "user_created".to_string()
-    }
+    let channel = connection.create_channel().await.unwrap();
 
-    fn handle(&self, message: Box<UserCreatedEventMessage>
-    ) -> Result<(), HandleError> {
-        let ten_millis = time::Duration::from_millis(1000);
-        let now = time::Instant::now();
+    // Declare the exchange to match publisher
+    channel
+        .exchange_declare(
+            "user_created",
+            ExchangeKind::Fanout,
+            ExchangeDeclareOptions::default(),
+            FieldTable::default(),
+        )
+        .await
+        .unwrap();
 
-        // thread::sleep(ten_millis);
+    // Declare the queue
+    channel
+        .queue_declare(
+            "user_created_queue",
+            QueueDeclareOptions {
+                durable: true,
+                auto_delete: false,
+                ..Default::default()
+            },
+            FieldTable::default(),
+        )
+        .await
+        .unwrap();
 
-        println!("In Marco’s Computer [2406411824]. Message received: {:?}",
-                 message);
+    // Bind the queue to the exchange with empty routing key (for Fanout exchange)
+    channel
+        .queue_bind(
+            "user_created_queue",
+            "user_created",
+            "",
+            QueueBindOptions::default(),
+            FieldTable::default(),
+        )
+        .await
+        .unwrap();
 
-        Ok(())
-    }
-}
+    // Set up consumer
+    let consumer = channel
+        .basic_consume(
+            "user_created_queue",
+            "user_created_consumer",
+            BasicConsumeOptions::default(),
+            FieldTable::default(),
+        )
+        .await
+        .unwrap();
 
-fn main() {
-    let listener =
-        CrosstownBus::new_queue_listener("amqp://guest:guest@localhost:5672".to_owned()
-        ).unwrap();
-    _ = listener.listen("user_created".to_owned(), UserCreatedHandler{},
-                        crosstown_bus::QueueProperties { auto_delete: false, durable: false,
-                            use_dead_letter: true });
-    loop {
+    println!("Waiting for messages on user_created queue...");
+
+    let mut consumer_stream = consumer;
+    while let Some(delivery) = consumer_stream.next().await {
+        match delivery {
+            Ok(delivery) => {
+                match UserCreatedEventMessage::try_from_slice(&delivery.data) {
+                    Ok(message) => {
+                        println!("In Marco's Computer [2406411824]. Message received: {:?}", message);
+                        delivery.ack(BasicAckOptions::default()).await.unwrap();
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to deserialize message: {:?}", e);
+                        delivery.nack(BasicNackOptions::default()).await.unwrap();
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Consumer error: {:?}", e);
+            }
+        }
     }
 }
