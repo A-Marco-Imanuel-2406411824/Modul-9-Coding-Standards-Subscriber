@@ -21,3 +21,24 @@ RabbitMQ chart when run with slow subscribers:![img_4.png](img_4.png)
 Explanation:
 The spike in this chart happens because the publisher is sending messages faster than the subscriber can process them. When the subscriber is slow, RabbitMQ keeps the incoming messages in the queue instead of delivering them immediately. This causes the total queued message count to rise quickly, sometimes reaching 10 or more messages during a busy period. The chart is showing a temporary backlog, which means messages are waiting to be consumed, not being lost. After the subscriber starts catching up, the queue size begins to drop again. This behavior is normal and shows that RabbitMQ is buffering the messages correctly while the consumer is delayed.
 
+RabbitMQ chart when run with many slow subscribers connected to the same queue: ![img_5.png](../Modul-9-Coding-Standards-Subscriber/img_5.png)
+Explanation:
+The queue stays lower in this case because the three slow subscribers are sharing the same queue instead of each receiving a full copy of every message. RabbitMQ distributes messages among consumers on the same queue, so the messages are load-balanced rather than duplicated. That means once a message is delivered to one subscriber, it is no longer counted as waiting in the queue, even if that subscriber has not finished processing it yet. With three subscribers running at the same time, RabbitMQ can keep about three messages in flight, one for each consumer, which is why the visible queued count drops to around three instead of climbing to 10 or more. The chart is therefore showing only the remaining waiting messages, not the messages already handed out to the subscribers. This behavior is normal and shows that having more consumers reduces the backlog more effectively than having only one slow consumer.
+
+NOTE: Several subscriber terminal Screenshots:
+![img_6.png](img_6.png)
+![img_7.png](img_7.png)
+![img_8.png](img_8.png)
+
+Possible improvements for the current publisher and subscriber code:
+
+1. Use constants or environment variables for the RabbitMQ URI, exchange name, and queue name instead of hardcoding them in the source code.
+2. Replace `unwrap()` with proper error handling so the program can fail gracefully and show clearer error messages.
+3. Add publisher confirms so the publisher can verify that RabbitMQ has accepted the message before moving on.
+4. Set a prefetch limit such as `basic_qos(1)` in the subscriber so slow consumers receive messages more fairly and the queue behavior is easier to control.
+5. Keep manual acknowledgements, but only acknowledge a message after it has been successfully processed.
+6. Use unique consumer tags or let RabbitMQ generate them automatically when running multiple subscribers.
+7. Remove hardcoded log text like `In Marco's Computer [2406411824]` and replace it with a generic or configurable message.
+8. Separate message creation, serialization, and publishing into smaller helper functions to make the code easier to read and maintain.
+9. Add retry logic or reconnection handling if the RabbitMQ connection is temporarily unavailable.
+10. Add basic integration tests to verify that the publisher and subscriber can still communicate correctly after code changes.
