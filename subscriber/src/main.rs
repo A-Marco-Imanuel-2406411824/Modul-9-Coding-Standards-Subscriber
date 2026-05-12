@@ -11,7 +11,6 @@ pub struct UserCreatedEventMessage {
 pub struct UserCreatedHandler;
 
 impl MessageHandler<UserCreatedEventMessage> for UserCreatedHandler {
-    // Placeholder
     fn get_handler_action(&self) -> String {
         "user_created".to_string()
     }
